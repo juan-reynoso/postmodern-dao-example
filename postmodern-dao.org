@@ -1,0 +1,144 @@
+* Postgresql and Lisp
+** Install postmodern
+#+begin_example
+CL-USER> (ql:quickload "postmodern")
+To load "postmodern":
+  Load 1 ASDF system:
+    postmodern
+; Loading "postmodern"
+
+("postmodern")
+#+end_example
+
+** Use the package
+#+begin_example
+CL-USER> (in-package :postmodern)
+#<PACKAGE "POSTMODERN">
+POMO> 
+#+end_example
+
+** Define a global variable
+#+begin_example
+POMO> (defparameter *db-parameters* '("db_name" "user_name" "1ultrasecret123" "localhost" :POOLED-P T))
+#+end_example
+
+** Define a macro in order to connect the postgresql server
+#+begin_example
+POMO> (defmacro with-database (&body query)
+  "This macro creates the connection with specified database information in *db-parameter* and execute the query."
+  `(postmodern:with-connection *db-parameters* 
+  ,@query))
+#+end_example
+
+** Test connection
+#+begin_example
+POMO> (defun postgresql-test ()
+  "Returns a string which is the version of the PostgreSQL"
+  (let ((version nil))
+    (with-database
+      (setf version (query (:select (:version))
+			   :single)))
+    (format t "~a ~%" version)))
+POMO> (postgresql-test)
+PostgreSQL 11.9 (Debian 11.9-0+deb10u1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 8.3.0-6) 8.3.0, 64-bit 
+NIL
+POMO> 
+#+end_example
+** Define a simple table
+#+begin_example
+POMO> (defclass fruits ()
+  ((id-fruit :accessor id-fruit :col-type serial :initarg :id-fruit)
+   (name :accessor name :col-type string :initarg :name :initform ""))
+  (:documentation "Dao class for a fruit record.")
+  (:metaclass postmodern:dao-class)
+  (:table-name fruits)(:keys id-fruit))
+#+end_example
+
+** See the SQL query string
+#+begin_example
+POMO> (dao-table-definition 'fruits)
+"CREATE TABLE fruits (id_fruit SERIAL NOT NULL, name TEXT NOT NULL, PRIMARY KEY (id_fruit))"
+#+end_example
+
+** Create the table
+** Option 1
+#+begin_example
+POMO> (with-database
+  (execute (dao-table-definition 'fruits)))
+#+end_example
+
+** Option 2
+#+begin_example
+POMO> (deftable fruits (!dao-def))
+
+POMO> (with-database
+  (create-table 'fruits))
+#+end_example
+
+
+* Database access objects (CRUD)
+
+** Insert
+#+begin_example
+POMO> (with-database
+  (insert-dao (make-instance 'fruits :name "apple"))
+  (insert-dao (make-instance 'fruits :name "orange")))
+#+end_example
+
+** Select
+#+begin_example
+POMO> (with-database
+  (get-dao 'fruits 1))
+
+#+end_example
+***  Define a method to display information
+#+begin_example
+POMO> (defparameter *sql-result* nil)
+POMO> (defmethod read-information ((obj fruits))
+  (format t "id= ~a~%name= ~a~%" (id-fruit obj) (name obj)))
+
+POMO> (setf *sql-result* (with-database
+		     (get-dao 'fruits 1)))
+
+POMO> (read-information *sql-result*)
+id= 1
+name= apple
+NIL
+POMO> 
+
+
+
+#+end_example
+
+** Update
+#+begin_example
+POMO> (defun update (id new-name)
+  (let ((record nil))
+    ;; get the record
+    (setf record (with-database
+           (get-dao 'fruits id)))
+    ;; set the new value
+    (setf (name record) new-name)
+    ;; finally update the record
+    (with-database
+      (update-dao record))))
+
+POMO> (update 1 "mango")
+#<FRUITS {100446AC33}>
+
+POMO> (setf *sql-result* (with-database
+		     (get-dao 'fruits 1)))
+#<FRUITS {10044A9A53}>
+POMO> (read-information *sql-result*)
+id= 1
+name= mango
+NIL
+POMO> 
+
+#+end_example
+** Delete
+#+begin_example
+POMO> (with-database
+  (delete-dao (make-instance 'fruits :id-fruit 1)))
+#+end_example
+
